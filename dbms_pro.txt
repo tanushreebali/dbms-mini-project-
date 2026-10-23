@@ -1,0 +1,154 @@
+create database cyber_sim;
+use cyber_sim;
+
+create table employee (
+    emp_id int primary key,
+    name varchar(50),
+    role varchar(30),
+    risk_score int default 0,
+    account_status varchar(30) default 'ACTIVE'
+);
+
+create table campaign (
+    campaign_id int primary key,
+    title varchar(100),
+    payload_type varchar(50)
+);
+
+create table simulation_log (
+    log_id int primary key auto_increment,
+    campaign_id int,
+    emp_id int,
+    link_clicked boolean default false,
+    creds_submitted boolean default false,
+    unique key unique_target (campaign_id, emp_id),
+    foreign key (campaign_id) references campaign(campaign_id),
+    foreign key (emp_id) references employee(emp_id)
+);
+
+insert into employee (emp_id, name, role) values 
+(101, 'Max', 'Developer'), 
+(102, 'Lewis', 'Sys Admin'), 
+(103, 'Michael', 'HR Manager'),
+(104, 'Sebastian', 'Finance Lead'),
+(105, 'Niki', 'Marketing Exec'),
+(106, 'Ayrton', 'Sales Rep'),
+(107, 'Charles', 'Customer Support'),
+(108, 'Fernando', 'Data Analyst'),
+(109, 'Kimi', 'Intern'),
+(110, 'Alain', 'Project Manager');
+
+insert into campaign (campaign_id, title, payload_type) values 
+(1, 'Fake IT Update', 'Credential Harvester'),
+(2, 'Payroll Document', 'Malicious Attachment'),
+(3, 'Free Coffee Promo', 'Link Click Tracker'),
+(4, 'Urgent CEO Request', 'Spear Phishing'),
+(5, 'Password Expiry', 'Credential Harvester');
+
+delimiter $$
+
+create trigger security_monitor
+after update on simulation_log
+for each row
+begin
+    if new.creds_submitted = true and old.creds_submitted = false then
+        update employee 
+        set risk_score = risk_score + 50 
+        where emp_id = new.emp_id;
+        
+        update employee 
+        set account_status = 'LOCKED - Breach Detected' 
+        where emp_id = new.emp_id and risk_score >= 100;
+    end if;
+end$$
+
+create procedure click_link(in target_emp int, in camp_id int)
+begin
+    insert ignore into simulation_log (campaign_id, emp_id) values (camp_id, target_emp);
+    
+    update simulation_log 
+    set link_clicked = true 
+    where emp_id = target_emp and campaign_id = camp_id;
+    
+    select concat(
+        '\n>>> TARGET ACQUIRED: employee ', target_emp, '\n',
+        '>>> Connection established to payload...\n',
+        '>>> Awaiting credential input...\n'
+    ) as 'terminal_output';
+end$$
+
+create procedure submit_creds(in target_emp int, in camp_id int)
+begin
+    declare click_count int default 0;
+    declare current_status varchar(50);
+    
+    select count(*) into click_count 
+    from simulation_log 
+    where emp_id = target_emp and campaign_id = camp_id and link_clicked = true;
+    
+    if click_count > 0 then
+        update simulation_log 
+        set creds_submitted = true 
+        where emp_id = target_emp and campaign_id = camp_id;
+        
+        select account_status into current_status from employee where emp_id = target_emp;
+        
+        select concat(
+            '\n>>> CREDENTIALS CAPTURED for employee ', target_emp, '\n',
+            '>>> Target fell for the simulation.\n',
+            '>>> Auto-updating organizational risk score...\n',
+            '>>> Current account status: ', current_status, '\n'
+        ) as 'terminal_output';
+    else
+        select concat(
+            '\n>>> ACTION DENIED: sequence error.\n',
+            '>>> Employee ', target_emp, ' has not clicked the link for campaign ', camp_id, ' yet.\n',
+            '>>> Target must execute click_link before submit_creds.'
+        ) as 'terminal_output';
+    end if;
+end$$
+
+create procedure secops_dashboard()
+begin
+    select 
+        name as 'employee', 
+        role as 'department', 
+        risk_score as 'vulnerability_score', 
+        account_status as 'network_access'
+    from employee
+    order by risk_score desc;
+end$$
+
+create procedure neutralize_threat(in target_emp int)
+begin
+    update employee
+    set risk_score = 0, account_status = 'active'
+    where emp_id = target_emp;
+    
+    delete from simulation_log
+    where emp_id = target_emp;
+    
+    select concat(
+        '\n>>> THREAT NEUTRALIZED: employee ', target_emp, '\n',
+        '>>> forensic payload purged.\n',
+        '>>> vulnerability score reset to 0.\n',
+        '>>> account access restored.\n'
+    ) as 'terminal_output';
+end$$
+
+delimiter ;
+
+create view forensic_audit_log as
+select 
+    l.log_id as 'incident_id',
+    e.name as 'target_name',
+    e.role as 'department',
+    c.title as 'attack_vector',
+    c.payload_type as 'payload',
+    l.link_clicked as 'link_compromised',
+    l.creds_submitted as 'data_exfiltrated'
+from simulation_log l
+join employee e on l.emp_id = e.emp_id
+join campaign c on l.campaign_id = c.campaign_id
+where l.link_clicked = true
+order by l.log_id desc;
